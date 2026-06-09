@@ -1,3 +1,4 @@
+import secrets
 from typing import Any
 
 import httpx
@@ -5,8 +6,10 @@ import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from starlette.datastructures import Headers
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 
 class Settings(BaseSettings):
@@ -23,6 +26,8 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     mcp_path: str = "/mcp"
+
+    api_key: str | None = None
 
 
 settings = Settings()
@@ -205,7 +210,37 @@ async def health(request: Request) -> PlainTextResponse:
     return PlainTextResponse("ok")
 
 
+class BearerAuthMiddleware:
+    """Require a matching `Authorization: Bearer <key>` on the protected path."""
+
+    def __init__(self, app: ASGIApp, api_key: str, protected_path: str) -> None:
+        self.app = app
+        self.api_key = api_key.encode("utf-8")
+        self.protected_path = protected_path
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["path"].startswith(self.protected_path):
+            scheme, _, credentials = (
+                Headers(scope=scope).get("Authorization", "").partition(" ")
+            )
+            if scheme.lower() != "bearer" or not secrets.compare_digest(
+                credentials.encode("utf-8"), self.api_key
+            ):
+                await PlainTextResponse("Unauthorized", status_code=401)(
+                    scope, receive, send
+                )
+                return
+        await self.app(scope, receive, send)
+
+
 app = mcp.streamable_http_app()
+
+if settings.api_key:
+    app.add_middleware(
+        BearerAuthMiddleware,
+        api_key=settings.api_key,
+        protected_path=settings.mcp_path,
+    )
 
 
 if __name__ == "__main__":
