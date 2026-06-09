@@ -1,0 +1,212 @@
+from typing import Any
+
+import httpx
+import uvicorn
+from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="DOMSTOLSVERKET_MCP_",
+        env_file=".env",
+        extra="ignore",
+    )
+
+    api_base_url: str = "https://rattspraxis.etjanst.domstol.se"
+    api_timeout_seconds: float = 30.0
+    api_user_agent: str = "domstolsverket-mcp/0.1"
+
+    host: str = "0.0.0.0"
+    port: int = 8000
+    mcp_path: str = "/mcp"
+
+
+settings = Settings()
+
+mcp = FastMCP(
+    "Domstolsverket MCP",
+    stateless_http=True,
+    json_response=True,
+    streamable_http_path=settings.mcp_path,
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+)
+
+http_client = httpx.AsyncClient(
+    base_url=settings.api_base_url.rstrip("/"),
+    timeout=settings.api_timeout_seconds,
+    headers={"User-Agent": settings.api_user_agent, "Accept": "application/json"},
+)
+
+
+async def _get_json(path: str, params: dict[str, Any] | None = None) -> Any:
+    response = await http_client.get(path, params=params)
+    response.raise_for_status()
+    return response.json()
+
+
+async def _post_json(path: str, body: dict[str, Any]) -> Any:
+    response = await http_client.post(path, json=body)
+    response.raise_for_status()
+    return response.json()
+
+
+def _drop_none(d: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in d.items() if v is not None}
+
+
+@mcp.tool()
+async def list_courts() -> list[dict[str, str]]:
+    """List all Swedish courts that publish case law via the Domstolsverket PUH API.
+
+    Returns a list of objects with `domstolKod` (court code, used as a filter in other
+    tools) and `domstolNamn` (court name in Swedish).
+    """
+    return await _get_json("/api/v1/domstolar")
+
+
+@mcp.tool()
+async def list_publications(
+    court_code: str | None = None,
+    case_number: str | None = None,
+    publication_types: str | None = None,
+    page: int | None = None,
+    page_size: int | None = None,
+    sort_order: str | None = None,
+    ascending: bool | None = None,
+) -> list[dict[str, Any]]:
+    """List case-law publications, optionally filtered by court and case number.
+
+    Args:
+        court_code: Filter by a single court's `domstolKod` (see `list_courts`).
+        case_number: Filter by case number (`malnummer`).
+        publication_types: Comma-separated list of publication types to include.
+        page: Zero- or one-based page index (see API docs).
+        page_size: Results per page.
+        sort_order: Field name to sort on.
+        ascending: Sort direction; true for ascending.
+    """
+    params = _drop_none(
+        {
+            "domstolkod": court_code,
+            "malnummer": case_number,
+            "publiceringstyper": publication_types,
+            "page": page,
+            "pagesize": page_size,
+            "sortorder": sort_order,
+            "asc": ascending,
+        }
+    )
+    return await _get_json("/api/v1/publiceringar", params=params)
+
+
+@mcp.tool()
+async def get_publication(publication_id: str) -> dict[str, Any]:
+    """Retrieve a single case-law publication by its id.
+
+    The response is a PubliceringDTO with fields like `domstol`, `typ`, `avgorandedatum`,
+    `sammanfattning`, `innehall`, `lagrumLista`, `nyckelordLista`, `bilagaLista`, etc.
+    """
+    return await _get_json(f"/api/v1/publiceringar/{publication_id}")
+
+
+@mcp.tool()
+async def get_publication_group(group_id: str) -> list[dict[str, Any]]:
+    """Retrieve all publications sharing a correlation group id (`gruppKorrelationsnummer`)."""
+    return await _get_json(f"/api/v1/publiceringar/grupp/{group_id}")
+
+
+@mcp.tool()
+async def search_case_law(
+    and_terms: list[str] | None = None,
+    or_terms: list[str] | None = None,
+    not_terms: list[str] | None = None,
+    exact_phrase: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    legal_areas: list[str] | None = None,
+    sfs_numbers: list[str] | None = None,
+    keywords: list[str] | None = None,
+    court_codes: list[str] | None = None,
+    case_numbers: list[str] | None = None,
+    decision_types: list[str] | None = None,
+    guiding_only: bool | None = None,
+    page_index: int = 0,
+    page_size: int = 20,
+    sort_order: str | None = None,
+    ascending: bool | None = None,
+) -> dict[str, Any]:
+    """Full-text search over Swedish higher-court case law.
+
+    Args:
+        and_terms: Terms that must all appear (AND).
+        or_terms: Terms where at least one must appear (OR).
+        not_terms: Terms that must not appear (NOT).
+        exact_phrase: Exact phrase that must appear.
+        date_from: Lower bound for `avgorandedatum` (ISO date).
+        date_to: Upper bound for `avgorandedatum` (ISO date).
+        legal_areas: Filter by legal area names (`rattsomrade`).
+        sfs_numbers: Filter by SFS statute numbers.
+        keywords: Filter by keywords (`sokord`).
+        court_codes: Filter by one or more court codes (see `list_courts`).
+        case_numbers: Filter by case numbers.
+        decision_types: Filter by decision type (`avgorandeTyp`).
+        guiding_only: If true, return only guiding decisions (`arVagledande`).
+        page_index: Zero-based page index.
+        page_size: Results per page.
+        sort_order: Field to sort by.
+        ascending: Sort direction.
+
+    Returns:
+        An object with `total` (int) and `publiceringLista` (array of publication summaries).
+    """
+    sokfras = _drop_none(
+        {
+            "andLista": and_terms,
+            "orLista": or_terms,
+            "notLista": not_terms,
+            "exaktFras": exact_phrase,
+        }
+    )
+
+    intervall = _drop_none({"fromDatum": date_from, "toDatum": date_to})
+    filter_ = _drop_none(
+        {
+            "intervall": intervall or None,
+            "rattsomradeLista": legal_areas,
+            "sfsNummerLista": sfs_numbers,
+            "sokordLista": keywords,
+            "domstolKodLista": court_codes,
+            "malnummerLista": case_numbers,
+            "avgorandeTypLista": decision_types,
+            "arVagledande": guiding_only,
+        }
+    )
+
+    body = _drop_none(
+        {
+            "sokfras": sokfras or None,
+            "sidIndex": page_index,
+            "antalPerSida": page_size,
+            "sortorder": sort_order,
+            "asc": ascending,
+            "filter": filter_ or None,
+        }
+    )
+
+    return await _post_json("/api/v1/sok", body)
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health(request: Request) -> PlainTextResponse:
+    return PlainTextResponse("ok")
+
+
+app = mcp.streamable_http_app()
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host=settings.host, port=settings.port)
