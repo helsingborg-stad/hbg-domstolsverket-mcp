@@ -20,6 +20,8 @@ Intended to run as a public HTTPS endpoint.
 - **Put TLS in front.** The app serves plain HTTP on `:8000`; terminate TLS ahead of it (reverse proxy or load balancer) so the bearer token is never sent in cleartext.
 - DNS rebinding protection is off by design — there is no browser in the path and host-allowlisting is not access control; the API key plus TLS are.
 
+The included `docker-compose.yml` provides this front (Traefik + Let's Encrypt): set `DOMAIN` and `ACME_EMAIL`, then `docker compose up -d`.
+
 ## Upstream API
 
 Wraps the Domstolsverket **Rättspraxis (PUH) v1** API — public, no auth.
