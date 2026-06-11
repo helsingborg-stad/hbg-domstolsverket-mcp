@@ -16,3 +16,6 @@ wheels/
 # Tool caches
 .ruff_cache/
 .pytest_cache/
+
+# Temp files
+tmp/
