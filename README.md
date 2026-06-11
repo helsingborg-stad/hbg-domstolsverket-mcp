@@ -12,13 +12,15 @@ uv run main.py
 
 Default endpoint: `http://0.0.0.0:8000/mcp`. Health check: `GET /health` returns `ok`. See `.env.example` for configuration.
 
+`DOMSTOLSVERKET_MCP_API_KEY` is required — the server refuses to start without it. `.env.example` ships a throwaway local value so the steps above work out of the box.
+
 ## Deployment
 
 Intended to run as a public HTTPS endpoint.
 
-- **Require the API key.** Set `DOMSTOLSVERKET_MCP_API_KEY` so the MCP path requires `Authorization: Bearer <key>`; `/health` stays open for probes.
-- **Put TLS in front.** The app serves plain HTTP on `:8000`; terminate TLS ahead of it (reverse proxy or load balancer) so the bearer token is never sent in cleartext.
-- DNS rebinding protection is off by design — there is no browser in the path and host-allowlisting is not access control; the API key plus TLS are.
+- **Require the API key.** Set `DOMSTOLSVERKET_MCP_API_KEY` so the MCP path requires `Authorization: Bearer <key>`. `/health` stays open for probes.
+- **Put TLS in front.** The app serves plain HTTP on `:8000`. Terminate TLS ahead of it (reverse proxy or load balancer) so the bearer token is never sent in cleartext.
+- DNS rebinding protection is off by design — there is no browser in the path and host-allowlisting is not access control. The API key plus TLS are.
 
 The included `docker-compose.yml` provides this front (Traefik + Let's Encrypt): set `DOMAIN` and `ACME_EMAIL`, then `docker compose up -d`.
 

@@ -5,6 +5,7 @@ import httpx
 import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from starlette.datastructures import Headers
 from starlette.requests import Request
@@ -27,7 +28,18 @@ class Settings(BaseSettings):
     port: int = 8000
     mcp_path: str = "/mcp"
 
-    api_key: str | None = None
+    api_key: str = Field(default="", validate_default=True)
+
+    @field_validator("api_key")
+    @classmethod
+    def _require_api_key(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError(
+                "DOMSTOLSVERKET_MCP_API_KEY must be set to a non-empty value; "
+                "the MCP path requires `Authorization: Bearer <key>`."
+            )
+        return v
 
 
 settings = Settings()
@@ -235,12 +247,11 @@ class BearerAuthMiddleware:
 
 app = mcp.streamable_http_app()
 
-if settings.api_key:
-    app.add_middleware(
-        BearerAuthMiddleware,
-        api_key=settings.api_key,
-        protected_path=settings.mcp_path,
-    )
+app.add_middleware(
+    BearerAuthMiddleware,
+    api_key=settings.api_key,
+    protected_path=settings.mcp_path,
+)
 
 
 if __name__ == "__main__":
