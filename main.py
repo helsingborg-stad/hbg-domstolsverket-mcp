@@ -1,3 +1,4 @@
+import contextlib
 import secrets
 from typing import Any
 
@@ -247,6 +248,21 @@ class BearerAuthMiddleware:
 
 
 app = mcp.streamable_http_app()
+
+# Wrap FastMCP's session-manager lifespan so the shared HTTP client closes on shutdown.
+_mcp_lifespan = app.router.lifespan_context
+
+
+@contextlib.asynccontextmanager
+async def _lifespan(scope):
+    try:
+        async with _mcp_lifespan(scope):
+            yield
+    finally:
+        await http_client.aclose()
+
+
+app.router.lifespan_context = _lifespan
 
 app.add_middleware(
     BearerAuthMiddleware,
