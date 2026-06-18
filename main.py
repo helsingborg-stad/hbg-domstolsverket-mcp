@@ -150,7 +150,7 @@ async def search_case_law(
     court_codes: list[str] | None = None,
     case_numbers: list[str] | None = None,
     decision_types: list[str] | None = None,
-    guiding_only: bool | None = None,
+    publication_forms: list[str] | None = None,
     page_index: int = 0,
     page_size: int = 20,
     sort_order: str | None = None,
@@ -171,7 +171,8 @@ async def search_case_law(
         court_codes: Filter by one or more court codes (see `list_courts`).
         case_numbers: Filter by case numbers.
         decision_types: Filter by decision type (`avgorandeTyp`).
-        guiding_only: If true, return only guiding decisions (`arVagledande`).
+        publication_forms: Filter by publication form (`publiceringsform`); one or more of
+            `REFERAT`, `DOM_ELLER_BESLUT`, `NOTIS`.
         page_index: Zero-based page index.
         page_size: Results per page.
         sort_order: Field to sort by.
@@ -199,7 +200,7 @@ async def search_case_law(
             "domstolKodLista": court_codes,
             "malnummerLista": case_numbers,
             "avgorandeTypLista": decision_types,
-            "arVagledande": guiding_only,
+            "publiceringsformLista": publication_forms,
         }
     )
 
