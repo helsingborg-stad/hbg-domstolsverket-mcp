@@ -1,10 +1,12 @@
 import contextlib
 import secrets
+import uuid
 from typing import Any
 
 import httpx
 import uvicorn
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -57,6 +59,8 @@ http_client = httpx.AsyncClient(
 async def _get_json(path: str, params: dict[str, Any] | None = None) -> Any:
     response = await http_client.get(path, params=params)
     response.raise_for_status()
+    if not response.content:
+        raise ToolError("No publication found with that id.")
     return response.json()
 
 
@@ -64,6 +68,14 @@ async def _post_json(path: str, body: dict[str, Any]) -> Any:
     response = await http_client.post(path, json=body)
     response.raise_for_status()
     return response.json()
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
 
 
 def _drop_none(d: dict[str, Any]) -> dict[str, Any]:
@@ -122,12 +134,16 @@ async def get_publication(publication_id: str) -> dict[str, Any]:
     The response is a PubliceringDTO with fields like `domstol`, `typ`, `avgorandedatum`,
     `sammanfattning`, `innehall`, `lagrumLista`, `nyckelordLista`, `bilagaLista`, etc.
     """
+    if not _is_uuid(publication_id):
+        raise ToolError("Invalid publication_id format.")
     return await _get_json(f"/api/v1/publiceringar/{publication_id}")
 
 
 @mcp.tool()
 async def get_publication_group(group_id: str) -> list[dict[str, Any]]:
     """Retrieve all publications sharing a correlation group id (`gruppKorrelationsnummer`)."""
+    if not _is_uuid(group_id):
+        raise ToolError("Invalid group_id format.")
     return await _get_json(f"/api/v1/publiceringar/grupp/{group_id}")
 
 
