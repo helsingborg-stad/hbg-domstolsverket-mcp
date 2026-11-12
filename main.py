@@ -4,7 +4,7 @@ from typing import Any
 
 import httpx
 import uvicorn
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -45,13 +45,7 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-mcp = FastMCP(
-    "Domstolsverket MCP",
-    stateless_http=True,
-    json_response=True,
-    streamable_http_path=settings.mcp_path,
-    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
-)
+mcp = MCPServer("Domstolsverket MCP")
 
 http_client = httpx.AsyncClient(
     base_url=settings.api_base_url.rstrip("/"),
@@ -247,7 +241,12 @@ class BearerAuthMiddleware:
         await self.app(scope, receive, send)
 
 
-app = mcp.streamable_http_app()
+app = mcp.streamable_http_app(
+    streamable_http_path=settings.mcp_path,
+    stateless_http=True,
+    json_response=True,
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+)
 
 # Wrap FastMCP's session-manager lifespan so the shared HTTP client closes on shutdown.
 _mcp_lifespan = app.router.lifespan_context
