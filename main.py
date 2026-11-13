@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     mcp_path: str = "/mcp"
+    allowed_hosts: str = "localhost:*,127.0.0.1:*"
+    allowed_origins: str = "http://localhost:*,http://127.0.0.1:*"
 
     api_key: str = Field(default="", validate_default=True)
 
@@ -244,15 +246,11 @@ class BearerAuthMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "http" and scope["path"].startswith(self.protected_path):
-            scheme, _, credentials = (
-                Headers(scope=scope).get("Authorization", "").partition(" ")
-            )
+            scheme, _, credentials = Headers(scope=scope).get("Authorization", "").partition(" ")
             if scheme.lower() != "bearer" or not secrets.compare_digest(
                 credentials.encode("utf-8"), self.api_key
             ):
-                await PlainTextResponse("Unauthorized", status_code=401)(
-                    scope, receive, send
-                )
+                await PlainTextResponse("Unauthorized", status_code=401)(scope, receive, send)
                 return
         await self.app(scope, receive, send)
 
@@ -261,7 +259,11 @@ app = mcp.streamable_http_app(
     streamable_http_path=settings.mcp_path,
     stateless_http=True,
     json_response=True,
-    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=settings.allowed_hosts.split(","),
+        allowed_origins=settings.allowed_origins.split(","),
+    ),
 )
 
 # Wrap FastMCP's session-manager lifespan so the shared HTTP client closes on shutdown.
