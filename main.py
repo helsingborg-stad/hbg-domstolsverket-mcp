@@ -49,7 +49,26 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-mcp = MCPServer("Domstolsverket MCP")
+mcp = MCPServer(
+    "Domstolsverket MCP",
+    instructions=(
+        "Use the domstolsverket tools when the user asks about Swedish case law "
+        "(rättspraxis), court rulings or precedents.\n"
+        "1. search_case_law with Swedish terms "
+        '(e.g. and_terms=["uppsägning", "lokalhyra"]). Narrow with court_codes '
+        "from list_courts, date_from/date_to, sfs_numbers or keywords.\n"
+        '2. Prefer publication_forms=["REFERAT"]: referat include the full text '
+        "(innehall) directly in the hits. DOM_ELLER_BESLUT hits only have a summary "
+        "(sammanfattning) and metadata.\n"
+        "3. typ PREJUDIKAT is precedent-setting; VAGLEDANDE_MEN_EJ_PREJUDICERANDE is "
+        "guiding but not precedent-setting.\n"
+        "4. get_publication(id) fetches one publication. "
+        "get_publication_group(gruppKorrelationsnummer) fetches related publications, "
+        "including cases cited in hanvisadePubliceringarLista.\n"
+        "5. Cite the court, case number (malNummerLista), decision date "
+        "(avgorandedatum) and referat number (referatNummerLista) when present."
+    ),
+)
 
 http_client = httpx.AsyncClient(
     base_url=settings.api_base_url.rstrip("/"),
